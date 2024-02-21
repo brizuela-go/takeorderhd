@@ -1,113 +1,394 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import db from "@/lib/client";
+import {
+  collection,
+  getDocs,
+  onSnapshot,
+  doc,
+  updateDoc,
+  setDoc,
+} from "firebase/firestore";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectValue,
+  SelectTrigger,
+} from "@/components/ui/select";
+import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function Home() {
+  const [tables, setTables] = useState([]);
+  const [items, setItems] = useState([]);
+  const [waiters, setWaiters] = useState([]);
+  const [selectedItems, setSelectedItems] = useState<any>({});
+  const [total, setTotal] = useState(0);
+  const [activeOrders, setActiveOrders] = useState([]);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
+      const ordersData = snapshot.docs
+        .map((doc) => doc.data())
+        .filter((order) => order.isActive);
+      setActiveOrders(ordersData as any);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeTables = onSnapshot(
+      collection(db, "tables"),
+      (snapshot) => {
+        const tablesData = snapshot.docs.map((doc) => doc.data());
+        setTables(tablesData as any);
+      }
+    );
+
+    const unsubscribeItems = onSnapshot(collection(db, "items"), (snapshot) => {
+      const itemsData = snapshot.docs.map((doc) => doc.data());
+      setItems(itemsData as any);
+    });
+
+    const unsubscribeWaiters = onSnapshot(
+      collection(db, "waiters"),
+      (snapshot) => {
+        const waitersData = snapshot.docs.map((doc) => doc.data());
+        setWaiters(waitersData as any);
+      }
+    );
+
+    // Clean up the subscriptions when the component unmounts
+    return () => {
+      unsubscribeTables();
+      unsubscribeItems();
+      unsubscribeWaiters();
+    };
+  }, []);
+
+  const handleItemSelectionChange = (
+    itemName: any,
+    isChecked: any,
+    isIncrement: boolean
+  ) => {
+    setSelectedItems((prev: any) => {
+      const newSelectedItems = { ...prev };
+      if (isIncrement) {
+        if (newSelectedItems[itemName]) {
+          newSelectedItems[itemName] += 1; // Increment the count
+        } else {
+          newSelectedItems[itemName] = 1; // Add the item with a count of 1
+        }
+      } else if (newSelectedItems[itemName] && newSelectedItems[itemName] > 0) {
+        newSelectedItems[itemName] -= 1; // Decrement the count
+        if (newSelectedItems[itemName] === 0) {
+          delete newSelectedItems[itemName]; // Remove the item if count reaches 0
+        }
+      }
+
+      // Calculate the new total
+      const newTotal = typedItems.reduce((acc, item) => {
+        const itemCount = newSelectedItems[item["Nombre del Platillo"]] || 0;
+        return acc + itemCount * Number(item.Precio);
+      }, 0);
+
+      setTotal(newTotal);
+      return newSelectedItems;
+    });
+  };
+
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter items based on the search query
+  const typedItems = items as {
+    "Nombre del Platillo": string;
+    Precio: number;
+    Imágen: string;
+  }[];
+
+  const filteredItems = typedItems.filter((item) =>
+    item["Nombre del Platillo"]
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase())
+  );
+
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+
+    const ordersCollectionRef = collection(db, "orders");
+    const formData = new FormData(e.target);
+
+    const ordersSnapshot = await getDocs(ordersCollectionRef);
+    const newOrderId = ordersSnapshot.docs.length + 1; // This might not be safe for concurrency reasons
+
+    // Create a reference to the new order with a custom ID
+    const newOrderRef = doc(db, "orders", newOrderId.toString());
+
+    const order = {
+      id: newOrderId,
+      waiter: formData.get("waiter"),
+      table: formData.get("table"),
+      items: selectedItems, // Assuming selectedItems is correctly managed elsewhere
+      paymentMethod: formData.get("paymentMethod"),
+      orderedAt: new Date().toLocaleString("es-MX", {
+        timeZone: "America/Mexico_City",
+      }),
+      total: total,
+      isActive: true,
+    };
+
+    if (
+      !order.waiter ||
+      !order.table ||
+      !order.paymentMethod ||
+      !order.items ||
+      !order.total ||
+      !order.isActive ||
+      !order.orderedAt ||
+      !order.id
+    ) {
+      toast.error("Por favor, rellena todos los campos");
+      return;
+    }
+
+    try {
+      await setDoc(newOrderRef, order);
+      toast.success("Pedido tomado con éxito");
+      // reset form and state
+      e.target.reset();
+      setSelectedItems([]);
+      setTotal(0);
+    } catch (error) {
+      console.error("Error adding document: ", error);
+    }
+  };
+
+  const [currentOrder, setCurrentOrder] = useState<any>();
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
+      const ordersData = snapshot.docs
+        .map((doc) => doc.data())
+        .filter((order) => order.isActive);
+      setActiveOrders(ordersData as any);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleMarkOrderInactive = async () => {
+    if (!currentOrder) return;
+    const orderRef = doc(db, "orders", currentOrder?.id.toString());
+    await updateDoc(orderRef, {
+      isActive: false,
+    });
+    setCurrentOrder(null);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="flex flex-col justify-center items-center gap-10  p-14">
+      <Image src="/huevosdias.jpg" alt="Logo" width={350} height={350} />
+
+      <section className="flex flex-col items-center space-y-4">
+        <form className="grid grid-cols-1 gap-6" onSubmit={handleSubmit}>
+          <label htmlFor="waiter">Meser@</label>
+          <select
+            name="waiter"
+            id="waiter"
+            className="bg-white rounded-md py-2"
           >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+            <option value="">Selecciona el Meser@</option>
+            {waiters.map((waiter: any, index) => (
+              <option key={index} value={waiter.Nombre}>
+                {waiter.Nombre}
+              </option>
+            ))}
+          </select>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+          <label htmlFor="table">Mesa</label>
+          <select name="table" id="table" className="bg-white rounded-md py-2">
+            <option value="">Selecciona la Mesa</option>
+            {tables.map((table: any, index) => (
+              <option key={index} value={table["Número de mesa"]}>
+                {table["Número de mesa"]}
+              </option>
+            ))}
+          </select>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant={"outline"}>Buscar platillos</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Seleccione los platillos</DialogTitle>
+              </DialogHeader>
+              {/* Search input inside the dialog */}
+              <Input
+                type="text"
+                placeholder="Buscar platillos..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="mb-4 p-2 border rounded"
+              />
+              <div>
+                {filteredItems.length > 0 ? (
+                  filteredItems.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex justify-between items-center"
+                    >
+                      <span>{item["Nombre del Platillo"]}</span>
+                      <img
+                        src={item["Imágen"]}
+                        alt={item["Nombre del Platillo"]}
+                        className="mr-4 rounded-md object-cover w-12 h-12"
+                      />
+                      <div>
+                        <Button
+                          className="px-2 py-1 mx-4"
+                          variant={"outline"}
+                          size={"icon"}
+                          onClick={() =>
+                            handleItemSelectionChange(
+                              item["Nombre del Platillo"],
+                              true,
+                              false
+                            )
+                          }
+                        >
+                          -
+                        </Button>
+                        <span>
+                          {selectedItems[item["Nombre del Platillo"]] || 0}
+                        </span>
+                        <Button
+                          className="px-2 py-1 mx-4"
+                          variant={"outline"}
+                          size={"icon"}
+                          onClick={() =>
+                            handleItemSelectionChange(
+                              item["Nombre del Platillo"],
+                              true,
+                              true
+                            )
+                          }
+                        >
+                          +
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p>No se encontraron platillos.</p>
+                )}
+              </div>
+              <DialogClose asChild>
+                <Button className="mt-4">Ok</Button>
+              </DialogClose>
+            </DialogContent>
+          </Dialog>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+          <label htmlFor="paymentMethod">Método de Pago</label>
+          <select
+            name="paymentMethod"
+            id="paymentMethod"
+            className="bg-white rounded-md py-2"
+          >
+            <option value="">Método de Pago</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
+          <p className="text-4xl tracking-tight font-semibold">$ {total}</p>
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+          <Button type="submit" className="w-full">
+            Tomar pedido
+          </Button>
+        </form>
+        {/* active orders, change code here */}
+        <section>
+          <h2 className="text-2xl font-bold mb-6">Pedidos activos</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeOrders.map((order: any, index) => (
+              <Card className="bg-white rounded-md shadow-md p-4 " key={index}>
+                <CardHeader>
+                  <CardTitle>Mesa: {order.table}</CardTitle>
+                  <CardDescription>Meser@: {order.waiter}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p>
+                    Platillos:{" "}
+                    {Object.keys(order.items)
+                      .map((key) => `${key} x${order.items[key]}`)
+                      .join(", ")}
+                  </p>
+                  <p>Método de Pago: {order.paymentMethod}</p>
+                  <p>Total: ${order.total}</p>
+                </CardContent>
+                <CardFooter>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button onClick={() => setCurrentOrder(order)}>
+                        Marcar como pagado
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>¿Estás seguro?</DialogTitle>
+                        <DialogDescription>
+                          Esta acción no se puede deshacer. Esto marcará el
+                          pedido como pagado.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogClose asChild>
+                        <Button
+                          variant={"outline"}
+                          onClick={handleMarkOrderInactive}
+                        >
+                          Confirmar
+                        </Button>
+                      </DialogClose>
+
+                      <DialogClose asChild>
+                        <Button variant={"destructive"}>Cancelar</Button>
+                      </DialogClose>
+                    </DialogContent>
+                  </Dialog>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </section>
+      </section>
     </main>
   );
 }
