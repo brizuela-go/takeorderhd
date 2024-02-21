@@ -244,55 +244,60 @@ export default function Home() {
 
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant={"outline"}>Buscar platillos</Button>
+              <Button variant="outline">Buscar platillos</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Seleccione los platillos</DialogTitle>
               </DialogHeader>
-              {/* Search input inside the dialog */}
+              {/* Improved search input inside the dialog */}
               <Input
                 type="text"
                 placeholder="Buscar platillos..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="mb-4 p-2 border rounded"
+                className="mb-4 p-2 border rounded w-full"
               />
-              <div>
+              {/* Scrollable container for dishes */}
+              <div className="overflow-y-auto max-h-60">
                 {filteredItems.length > 0 ? (
                   filteredItems.map((item, index) => (
                     <div
                       key={index}
-                      className="flex justify-between items-center"
+                      className="flex justify-between items-center mb-2 p-2 hover:bg-gray-100 rounded-lg"
                     >
-                      <span>{item["Nombre del Platillo"]}</span>
-                      <img
-                        src={item["Imágen"]}
-                        alt={item["Nombre del Platillo"]}
-                        className="mr-4 rounded-md object-cover w-12 h-12"
-                      />
-                      <div>
+                      <div className="flex items-center">
+                        <img
+                          src={item["Imágen"]}
+                          alt={item["Nombre del Platillo"]}
+                          className="mr-4 rounded-md object-cover w-16 h-16" // Bigger image for better visibility
+                        />
+                        <span className="font-semibold">
+                          {item["Nombre del Platillo"]}
+                        </span>
+                      </div>
+                      <div className="flex items-center">
                         <Button
-                          className="px-2 py-1 mx-4"
-                          variant={"outline"}
-                          size={"icon"}
+                          className="px-2 py-1 mx-2"
+                          variant="outline"
+                          size="icon"
                           onClick={() =>
                             handleItemSelectionChange(
                               item["Nombre del Platillo"],
-                              true,
-                              false
+                              false,
+                              false // Adjusted for correct parameter order
                             )
                           }
                         >
                           -
                         </Button>
-                        <span>
+                        <span className="mx-2">
                           {selectedItems[item["Nombre del Platillo"]] || 0}
                         </span>
                         <Button
-                          className="px-2 py-1 mx-4"
-                          variant={"outline"}
-                          size={"icon"}
+                          className="px-2 py-1 mx-2"
+                          variant="outline"
+                          size="icon"
                           onClick={() =>
                             handleItemSelectionChange(
                               item["Nombre del Platillo"],
@@ -307,11 +312,15 @@ export default function Home() {
                     </div>
                   ))
                 ) : (
-                  <p>No se encontraron platillos.</p>
+                  <p className="text-center mt-2">
+                    No se encontraron platillos.
+                  </p>
                 )}
               </div>
               <DialogClose asChild>
-                <Button className="mt-4">Ok</Button>
+                <Button variant="default" className="mt-4 w-full py-2">
+                  Aceptar
+                </Button>
               </DialogClose>
             </DialogContent>
           </Dialog>
