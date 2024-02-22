@@ -13,17 +13,7 @@ import {
 } from "firebase/firestore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectValue,
-  SelectTrigger,
-} from "@/components/ui/select";
 import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -41,14 +31,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useSearchParams } from "next/navigation";
 
 export default function Home() {
-  const [tables, setTables] = useState([]);
   const [items, setItems] = useState([]);
   const [waiters, setWaiters] = useState([]);
   const [selectedItems, setSelectedItems] = useState<any>({});
   const [total, setTotal] = useState(0);
   const [activeOrders, setActiveOrders] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [notes, setNotes] = useState("");
+
+  const params = useSearchParams();
+  const tableNumber = params.get("table") || 0;
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
@@ -64,14 +59,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const unsubscribeTables = onSnapshot(
-      collection(db, "tables"),
-      (snapshot) => {
-        const tablesData = snapshot.docs.map((doc) => doc.data());
-        setTables(tablesData as any);
-      }
-    );
-
     const unsubscribeItems = onSnapshot(collection(db, "items"), (snapshot) => {
       const itemsData = snapshot.docs.map((doc) => doc.data());
       setItems(itemsData as any);
@@ -85,11 +72,19 @@ export default function Home() {
       }
     );
 
+    const unsubscribeCategories = onSnapshot(
+      collection(db, "categories"),
+      (snapshot) => {
+        const categoriesData = snapshot.docs.map((doc) => doc.data());
+        setCategories(categoriesData as any);
+      }
+    );
+
     // Clean up the subscriptions when the component unmounts
     return () => {
-      unsubscribeTables();
       unsubscribeItems();
       unsubscribeWaiters();
+      unsubscribeCategories();
     };
   }, []);
 
@@ -131,6 +126,8 @@ export default function Home() {
     "Nombre del Platillo": string;
     Precio: number;
     Imágen: string;
+    Descripción: string;
+    Categoría: string;
   }[];
 
   const filteredItems = typedItems.filter((item) =>
@@ -154,7 +151,7 @@ export default function Home() {
     const order = {
       id: newOrderId,
       waiter: formData.get("waiter"),
-      table: formData.get("table"),
+      table: tableNumber,
       items: selectedItems, // Assuming selectedItems is correctly managed elsewhere
       paymentMethod: formData.get("paymentMethod"),
       orderedAt: new Date().toLocaleString("es-MX", {
@@ -162,6 +159,7 @@ export default function Home() {
       }),
       total: total,
       isActive: true,
+      notes: notes,
     };
 
     if (
@@ -185,6 +183,7 @@ export default function Home() {
       e.target.reset();
       setSelectedItems([]);
       setTotal(0);
+      setNotes("");
     } catch (error) {
       console.error("Error adding document: ", error);
     }
@@ -212,19 +211,33 @@ export default function Home() {
     setCurrentOrder(null);
   };
 
+  const itemsGroupedByCategory: { [key: string]: any[] } = filteredItems.reduce(
+    (acc: any, item) => {
+      const category: any = item.Categoría;
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(item);
+      return acc;
+    },
+    {}
+  );
+
   return (
-    <main className="flex flex-col justify-center items-center gap-10  p-14">
+    <main className="flex flex-col justify-center items-center gap-10 p-14">
       <Image src="/huevosdias.jpg" alt="Logo" width={350} height={350} />
 
       <section className="flex flex-col items-center space-y-4">
         <form className="grid grid-cols-1 gap-6" onSubmit={handleSubmit}>
-          <label htmlFor="waiter">Meser@</label>
+          <p className="text-2xl font-bold">Mesa {tableNumber}</p>
+
+          {/* Waiter selection */}
           <select
             name="waiter"
             id="waiter"
             className="bg-white rounded-md py-2"
           >
-            <option value="">Selecciona el Meser@</option>
+            <option value="">¿Quién te atendió?</option>
             {waiters.map((waiter: any, index) => (
               <option key={index} value={waiter.Nombre}>
                 {waiter.Nombre}
@@ -232,16 +245,7 @@ export default function Home() {
             ))}
           </select>
 
-          <label htmlFor="table">Mesa</label>
-          <select name="table" id="table" className="bg-white rounded-md py-2">
-            <option value="">Selecciona la Mesa</option>
-            {tables.map((table: any, index) => (
-              <option key={index} value={table["Número de mesa"]}>
-                {table["Número de mesa"]}
-              </option>
-            ))}
-          </select>
-
+          {/* Items selection dialog */}
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline">Buscar platillos</Button>
@@ -250,7 +254,6 @@ export default function Home() {
               <DialogHeader>
                 <DialogTitle>Seleccione los platillos</DialogTitle>
               </DialogHeader>
-              {/* Improved search input inside the dialog */}
               <Input
                 type="text"
                 placeholder="Buscar platillos..."
@@ -258,64 +261,91 @@ export default function Home() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="mb-4 p-2 border rounded w-full"
               />
-              {/* Scrollable container for dishes */}
               <div className="overflow-y-auto max-h-60">
-                {filteredItems.length > 0 ? (
-                  filteredItems.map((item, index) => (
-                    <div
-                      key={index}
-                      className="flex justify-between items-center mb-2 p-2 hover:bg-gray-100 rounded-lg"
-                    >
-                      <div className="flex items-center">
-                        <img
-                          src={item["Imágen"]}
-                          alt={item["Nombre del Platillo"]}
-                          className="mr-4 rounded-md object-cover w-16 h-16" // Bigger image for better visibility
-                        />
-                        <span className="font-semibold">
-                          {item["Nombre del Platillo"]}
-                        </span>
+                {Object.keys(itemsGroupedByCategory).length > 0 ? (
+                  Object.entries(itemsGroupedByCategory).map(
+                    ([categoryName, items]) => (
+                      <div key={categoryName}>
+                        <h3 className="text-xl font-bold mt-4 mb-2">
+                          {categoryName}
+                        </h3>
+                        {items.map((item, index) => (
+                          <div
+                            key={index}
+                            className="flex justify-between items-center mb-2 p-2 hover:bg-gray-100 rounded-lg"
+                          >
+                            <div className="flex items-center">
+                              <img
+                                src={item["Imágen"]}
+                                alt={item["Nombre del Platillo"]}
+                                className="mr-4 rounded-md object-cover w-16 h-16"
+                              />
+                              <div className="flex flex-col ">
+                                <span className="font-semibold">
+                                  {item["Nombre del Platillo"]}
+                                </span>
+                                <span className="text-sm text-gray-500">
+                                  ${item.Precio}
+                                </span>
+                                <span className="text-sm text-gray-500">
+                                  {item.Descripción}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center">
+                              <Button
+                                className="px-2 py-1 mx-2"
+                                variant="outline"
+                                size="icon"
+                                onClick={() =>
+                                  handleItemSelectionChange(
+                                    item["Nombre del Platillo"],
+                                    false,
+                                    false
+                                  )
+                                }
+                              >
+                                -
+                              </Button>
+                              <span className="mx-2">
+                                {selectedItems[item["Nombre del Platillo"]] ||
+                                  0}
+                              </span>
+                              <Button
+                                className="px-2 py-1 mx-2"
+                                variant="outline"
+                                size="icon"
+                                onClick={() =>
+                                  handleItemSelectionChange(
+                                    item["Nombre del Platillo"],
+                                    true,
+                                    true
+                                  )
+                                }
+                              >
+                                +
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex items-center">
-                        <Button
-                          className="px-2 py-1 mx-2"
-                          variant="outline"
-                          size="icon"
-                          onClick={() =>
-                            handleItemSelectionChange(
-                              item["Nombre del Platillo"],
-                              false,
-                              false // Adjusted for correct parameter order
-                            )
-                          }
-                        >
-                          -
-                        </Button>
-                        <span className="mx-2">
-                          {selectedItems[item["Nombre del Platillo"]] || 0}
-                        </span>
-                        <Button
-                          className="px-2 py-1 mx-2"
-                          variant="outline"
-                          size="icon"
-                          onClick={() =>
-                            handleItemSelectionChange(
-                              item["Nombre del Platillo"],
-                              true,
-                              true
-                            )
-                          }
-                        >
-                          +
-                        </Button>
-                      </div>
-                    </div>
-                  ))
+                    )
+                  )
                 ) : (
                   <p className="text-center mt-2">
                     No se encontraron platillos.
                   </p>
                 )}
+              </div>
+              <div className="mt-4">
+                <Input
+                  type="text"
+                  name="notes"
+                  placeholder="Notas"
+                  className="w-full"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
               </div>
               <DialogClose asChild>
                 <Button variant="default" className="mt-4 w-full py-2">
@@ -325,7 +355,7 @@ export default function Home() {
             </DialogContent>
           </Dialog>
 
-          <label htmlFor="paymentMethod">Método de Pago</label>
+          {/* Payment method selection */}
           <select
             name="paymentMethod"
             id="paymentMethod"
@@ -338,12 +368,12 @@ export default function Home() {
           </select>
 
           <p className="text-4xl tracking-tight font-semibold">$ {total}</p>
-
           <Button type="submit" className="w-full">
             Tomar pedido
           </Button>
         </form>
-        {/* active orders, change code here */}
+
+        {/* Active orders section */}
         <section>
           <h2 className="text-2xl font-bold mb-6">Pedidos activos</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -386,7 +416,6 @@ export default function Home() {
                           Confirmar
                         </Button>
                       </DialogClose>
-
                       <DialogClose asChild>
                         <Button variant={"destructive"}>Cancelar</Button>
                       </DialogClose>
