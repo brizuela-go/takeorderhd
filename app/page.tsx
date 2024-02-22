@@ -13,7 +13,17 @@ import {
 } from "firebase/firestore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectValue,
+  SelectTrigger,
+} from "@/components/ui/select";
 import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -31,9 +41,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useSearchParams } from "next/navigation";
 
 export default function Home() {
+  const [tables, setTables] = useState([]);
   const [items, setItems] = useState([]);
   const [waiters, setWaiters] = useState([]);
   const [selectedItems, setSelectedItems] = useState<any>({});
@@ -41,9 +51,6 @@ export default function Home() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [categories, setCategories] = useState([]);
   const [notes, setNotes] = useState("");
-
-  const params = useSearchParams();
-  const tableNumber = params.get("table") || 0;
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
@@ -59,6 +66,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const unsubscribeTables = onSnapshot(
+      collection(db, "tables"),
+      (snapshot) => {
+        const tablesData = snapshot.docs.map((doc) => doc.data());
+        setTables(tablesData as any);
+      }
+    );
+
     const unsubscribeItems = onSnapshot(collection(db, "items"), (snapshot) => {
       const itemsData = snapshot.docs.map((doc) => doc.data());
       setItems(itemsData as any);
@@ -82,6 +97,7 @@ export default function Home() {
 
     // Clean up the subscriptions when the component unmounts
     return () => {
+      unsubscribeTables();
       unsubscribeItems();
       unsubscribeWaiters();
       unsubscribeCategories();
@@ -151,7 +167,7 @@ export default function Home() {
     const order = {
       id: newOrderId,
       waiter: formData.get("waiter"),
-      table: tableNumber,
+      table: formData.get("table"),
       items: selectedItems, // Assuming selectedItems is correctly managed elsewhere
       paymentMethod: formData.get("paymentMethod"),
       orderedAt: new Date().toLocaleString("es-MX", {
@@ -229,18 +245,26 @@ export default function Home() {
 
       <section className="flex flex-col items-center space-y-4">
         <form className="grid grid-cols-1 gap-6" onSubmit={handleSubmit}>
-          <p className="text-2xl font-bold">Mesa {tableNumber}</p>
-
           {/* Waiter selection */}
           <select
             name="waiter"
             id="waiter"
             className="bg-white rounded-md py-2"
           >
-            <option value="">¿Quién te atendió?</option>
+            <option value="">Selecciona el Meser@</option>
             {waiters.map((waiter: any, index) => (
               <option key={index} value={waiter.Nombre}>
                 {waiter.Nombre}
+              </option>
+            ))}
+          </select>
+
+          {/* Table selection */}
+          <select name="table" id="table" className="bg-white rounded-md py-2">
+            <option value="">Selecciona la Mesa</option>
+            {tables.map((table, index) => (
+              <option key={index} value={table["Número de mesa"]}>
+                {table["Número de mesa"]}
               </option>
             ))}
           </select>
